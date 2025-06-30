@@ -14,10 +14,17 @@
             <input type="text" id="name-input" placeholder="Enter a name" required>
             <button type="submit">Pronounce</button>
         </form>
+
+        <div id="voice-selector-container" class="hidden">
+            <label for="voice-selector">Change Speaker:</label>
+            <select id="voice-selector"></select>
+        </div>
+
         <div id="results-container" class="hidden">
             <h2>Results</h2>
             <div id="loader" class="loader hidden"></div>
             <div id="result-content">
+                <div id="auto-select-message" class="info-message hidden"></div>
                 <div id="ethnicity-result"></div>
                 <div id="pronunciation-result"></div>
                 <div id="feedback-buttons" class="hidden">

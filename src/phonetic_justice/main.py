@@ -43,9 +43,12 @@ class PronunciationResult(BaseModel):
     audio_output: Any = None
     status: str
     details: str
+    voice_id_used: str | None = None
+    selection_method: str | None = None
 
 class NameInput(BaseModel):
     name: str
+    voice_id: str | None = None
 
 class PronunciationOutput(BaseModel):
     ethnicity_result: EthnicityResult
@@ -56,6 +59,11 @@ class PronunciationOutput(BaseModel):
 def read_index():
     """Serves the main index.html file."""
     return os.path.join(static_dir, "index.html")
+
+@app.get("/voices")
+async def get_voices():
+    """Returns a list of available TTS voices."""
+    return pronunciation_agent.AVAILABLE_VOICES
 
 @app.post("/pronounce", response_model=PronunciationOutput)
 async def get_pronunciation(data: NameInput):
@@ -96,7 +104,11 @@ async def get_pronunciation(data: NameInput):
         name_to_pronounce = data.name # Fallback to original name
 
     # Step 3: Generate pronunciation
-    pronunciation_result = pronunciation_agent.run(name_to_pronounce, detected_ethnicity)
+    pronunciation_result = pronunciation_agent.run(
+        name_to_pronounce,
+        detected_ethnicity,
+        voice_id=data.voice_id
+    )
 
     # Combine results
     result = {
