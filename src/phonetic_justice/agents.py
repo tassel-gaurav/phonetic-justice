@@ -17,6 +17,7 @@ class EthnicityDetectionAgent:
             raise ValueError("GOOGLE_API_KEY not found in .env file.")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        self.generation_config = genai.types.GenerationConfig(temperature=0.0)
 
     def run(self, name: str) -> Dict[str, Any]:
         """
@@ -30,6 +31,10 @@ class EthnicityDetectionAgent:
         """
         prompt = f"""
         Analyze the following name and determine its most likely ethnic origin.
+
+        **IMPORTANT**: Please prioritize the following ethnicities if they are a plausible match: **Vietnamese, Chinese, Arabic, Indian**.
+        If the name is clearly from a different origin (e.g., "Siobhan" is Irish), you should state that. However, if there is ambiguity, lean towards one of the prioritized ethnicities.
+
         Name: "{name}"
 
         Provide the output in a JSON object with the following keys:
@@ -50,7 +55,10 @@ class EthnicityDetectionAgent:
         """
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(
+                prompt,
+                generation_config=self.generation_config
+            )
             # Clean up the response to extract only the JSON part
             json_str = re.search(r'```json\n({.*?})\n```', response.text, re.DOTALL)
             if json_str:
@@ -79,6 +87,7 @@ class NameTransliterationAgent:
             raise ValueError("GOOGLE_API_KEY not found for Transliteration Agent.")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        self.generation_config = genai.types.GenerationConfig(temperature=0.0)
 
     def run(self, name: str, ethnicity: str) -> Dict[str, str]:
         """
@@ -114,7 +123,10 @@ class NameTransliterationAgent:
         JSON response:
         """
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(
+                prompt,
+                generation_config=self.generation_config
+            )
             # Clean up the response to extract only the JSON part
             json_str = re.search(r'```json\n({.*?})\n```', response.text, re.DOTALL)
             if json_str:
@@ -138,6 +150,15 @@ class PronunciationGenerationAgent:
         {"name": "Ian (Mandarin)", "voice_id": "xOb2inHvz6kuaPa9808C"},
         {"name": "Kayla (Hindi)", "voice_id": "fqmA1vGU7WYwC8w6Lidg"},
         {"name": "Monica (Arabic)", "voice_id": "m0ym3Tl23iHi7B3lTc2L"},
+    ]
+
+    # General high-quality voices for alternative pronunciations
+    GENERAL_VOICES = [
+        {"name": "Sam", "voice_id": "L4omxLlzzX7u0Vgo4zqO"},
+        {"name": "Adrienne", "voice_id": "NCqNKuvkpY9cBJOBfyRq"},
+        {"name": "Allison", "voice_id": "AwP6NZEQDkC2l0Yf5Bd2"},
+        {"name": "Amy", "voice_id": "MMT36IyAWQHYKeo728oe"},
+        {"name": "Phil", "voice_id": "BTVzVEIfTjModO7Yu57v"},
     ]
 
     # We can map ethnicities to specific, fine-tuned voices for better quality.
@@ -165,11 +186,70 @@ class PronunciationGenerationAgent:
             "xi-api-key": self.api_key
         }
 
-    def run(self, native_script_name: str, ethnicity: str, voice_id: str | None = None) -> Dict[str, Any]:
+    def _generate_tts(self, text_to_speak: str, voice_id: str, selection_method: str) -> Dict[str, Any]:
+        """Helper function to call the TTS API and save the file."""
+        request_url = self.TTS_URL.format(voice_id=voice_id)
+        
+        data = {
+            "text": text_to_speak,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "speed": 1.0
+            },
+            "seed": 123 # Use a fixed seed for deterministic output
+        }
+
+        try:
+            response = requests.post(request_url, json=data, headers=self.headers)
+            response.raise_for_status() # Will raise an exception for 4xx/5xx errors
+
+            # Save the audio to a file
+            filename = f"pronunciation_{uuid.uuid4()}.mp3"
+            file_path = os.path.join(self.output_dir, filename)
+            
+            with open(file_path, "wb") as f:
+                f.write(response.content)
+
+            web_path = f"/static/audio/{filename}"
+            
+            return {
+                "audio_output": web_path,
+                "status": "success",
+                "details": f"Audio generated for '{text_to_speak}'.",
+                "voice_id_used": voice_id,
+                "selection_method": selection_method
+            }
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error during TTS HTTP request: {e}")
+            return {
+                "audio_output": None,
+                "status": "error_tts_http",
+                "details": f"Failed to generate audio via API call. {e}",
+                "voice_id_used": voice_id,
+                "selection_method": selection_method
+            }
+
+    def run(self, native_script_name: str, ethnicity: str, voice_id: str | None = None, generate_for_all_available: bool = False, use_general_voices: bool = False) -> Dict[str, Any] | list[Dict[str, Any]]:
         """
         Runs the pronunciation generation process using a direct HTTP call.
         Overrides automatic voice selection if a voice_id is provided.
+        If generate_for_all_available is True, it generates audio from all available voices.
+        If use_general_voices is True, it generates audio from all general voices.
         """
+        if generate_for_all_available:
+            voice_list = self.GENERAL_VOICES if use_general_voices else self.AVAILABLE_VOICES
+            voice_type = "general" if use_general_voices else "specialized"
+            print(f"Agent: Generating TTS for '{native_script_name}' from all {voice_type} voices.")
+            results = []
+            for voice in voice_list:
+                result = self._generate_tts(native_script_name, voice['voice_id'], f"manual_all_{voice_type}")
+                result['voice_name'] = voice['name']
+                results.append(result)
+            return results
+
         print(f"Agent: Generating TTS for '{native_script_name}' via HTTP API")
         
         used_voice_id = voice_id
@@ -189,46 +269,5 @@ class PronunciationGenerationAgent:
              selection_method = "manual" # User provided a voice_id
 
         print(f"Agent: Selected voice_id '{used_voice_id}' for ethnicity '{ethnicity}' (Method: {selection_method})")
-
-        request_url = self.TTS_URL.format(voice_id=used_voice_id)
         
-        data = {
-            "text": native_script_name,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.75,
-                "speed": 1.0
-            }
-        }
-
-        try:
-            response = requests.post(request_url, json=data, headers=self.headers)
-            response.raise_for_status() # Will raise an exception for 4xx/5xx errors
-
-            # Save the audio to a file
-            filename = f"pronunciation_{uuid.uuid4()}.mp3"
-            file_path = os.path.join(self.output_dir, filename)
-            
-            with open(file_path, "wb") as f:
-                f.write(response.content)
-
-            web_path = f"/static/audio/{filename}"
-            
-            return {
-                "audio_output": web_path,
-                "status": "success",
-                "details": f"Audio generated for '{native_script_name}'.",
-                "voice_id_used": used_voice_id,
-                "selection_method": selection_method
-            }
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error during TTS HTTP request: {e}")
-            return {
-                "audio_output": None,
-                "status": "error_tts_http",
-                "details": f"Failed to generate audio via API call. {e}",
-                "voice_id_used": used_voice_id,
-                "selection_method": selection_method
-            }
+        return self._generate_tts(native_script_name, used_voice_id, selection_method)

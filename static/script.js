@@ -8,12 +8,35 @@ document.addEventListener('DOMContentLoaded', async function() {
         const response = await fetch('/voices');
         const voices = await response.json();
         const voiceSelector = document.getElementById('voice-selector');
-        voices.forEach(voice => {
-            const option = document.createElement('option');
-            option.value = voice.voice_id;
-            option.textContent = voice.name;
-            voiceSelector.appendChild(option);
-        });
+        
+        // Group voices by category
+        const specializedVoices = voices.filter(voice => voice.category === 'Specialized');
+        const generalVoices = voices.filter(voice => voice.category === 'General');
+        
+        // Create optgroups for better organization
+        if (specializedVoices.length > 0) {
+            const specializedGroup = document.createElement('optgroup');
+            specializedGroup.label = 'Specialized Voices';
+            specializedVoices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.voice_id;
+                option.textContent = voice.name;
+                specializedGroup.appendChild(option);
+            });
+            voiceSelector.appendChild(specializedGroup);
+        }
+        
+        if (generalVoices.length > 0) {
+            const generalGroup = document.createElement('optgroup');
+            generalGroup.label = 'General Voices';
+            generalVoices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.voice_id;
+                option.textContent = voice.name;
+                generalGroup.appendChild(option);
+            });
+            voiceSelector.appendChild(generalGroup);
+        }
     } catch (error) {
         console.error("Failed to load voices:", error);
     }
@@ -23,11 +46,16 @@ let currentName = ''; // Keep track of the name being processed
 
 document.getElementById('name-form').addEventListener('submit', async function(event) {
     event.preventDefault();
-    // When submitting the form, it's always a new request, so reset the name.
+    
+    // Reset for new pronunciation request
     const nameInput = document.getElementById('name-input');
-    if (nameInput.value !== currentName) {
-        currentName = '';
+    const newName = nameInput.value.trim();
+    
+    // If it's a different name, reset everything
+    if (newName !== currentName) {
+        currentName = '';  // This will trigger auto-detection
     }
+    
     await handlePronunciationRequest();
 });
 
@@ -55,20 +83,45 @@ async function handlePronunciationRequest() {
         return;
     }
 
+    // COMPLETE RESET: Always clear all previous results and additional sections for every pronunciation request
+    const alternativesContainer = document.getElementById('alternatives-container');
+    const generalContainer = document.getElementById('general-container');
+    if (alternativesContainer) {
+        alternativesContainer.remove();
+    }
+    if (generalContainer) {
+        generalContainer.remove();
+    }
+
+    // Reset all button states that might have been modified
+    const retryBtn = document.getElementById('retry-btn');
+    const generalBtn = document.getElementById('general-voices-btn');
+    if (retryBtn) {
+        retryBtn.disabled = false;
+        retryBtn.textContent = 'Get Another';
+    }
+    if (generalBtn) {
+        generalBtn.disabled = false;
+        generalBtn.textContent = 'Try General Voices';
+    }
+
     // Show loader and hide all result-related elements, including the voice selector
     resultsContainer.classList.remove('hidden');
     loader.classList.remove('hidden');
     resultContent.classList.add('hidden');
     feedbackButtons.classList.add('hidden');
+    feedbackButtons.style.display = 'none'; // Ensure it's hidden during loading
     autoSelectMessage.classList.add('hidden');
     voiceSelectorContainer.style.display = 'none'; // Use direct style manipulation
     errorMessageDiv.innerHTML = '';
     ethnicityResultDiv.innerHTML = '';
     pronunciationResultDiv.innerHTML = '';
 
-    // If currentName is empty, it's a new request where the backend should auto-detect.
-    // Otherwise, it's a follow-up request with a manually selected voice.
-    const isNewPronunciationRequest = (currentName === '');
+    // Reset pronunciation result display style in case it was hidden
+    pronunciationResultDiv.style.display = 'block';
+
+    // Determine if this is a new pronunciation request (new name) or voice change for same name
+    const isNewPronunciationRequest = (currentName !== name);
     currentName = name; // Lock in the name for this request cycle
 
     try {
@@ -129,6 +182,9 @@ async function handlePronunciationRequest() {
 
         resultContent.classList.remove('hidden');
         feedbackButtons.classList.remove('hidden');
+        
+        // Ensure buttons are visible (additional safety check)
+        feedbackButtons.style.display = 'block';
 
     } catch (error) {
         errorMessageDiv.innerText = `An error occurred: ${error.message}. Please try again.`;
@@ -144,8 +200,132 @@ async function handlePronunciationRequest() {
     }
 }
 
-document.getElementById('retry-btn').addEventListener('click', () => {
-    alert('Functionality to get another pronunciation is not yet implemented.');
+document.getElementById('retry-btn').addEventListener('click', async () => {
+    const name = document.getElementById('name-input').value;
+    if (!name) return;
+
+    const retryBtn = document.getElementById('retry-btn');
+    retryBtn.disabled = true; // Prevent multiple clicks
+    retryBtn.textContent = 'Generating...';
+
+    const feedbackButtons = document.getElementById('feedback-buttons');
+    const existingPronunciationResult = document.getElementById('pronunciation-result');
+    
+    try {
+        const response = await fetch('/pronounce/all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, voice_id: null }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get new pronunciations.');
+
+        const data = await response.json();
+        const results = data.pronunciation_result;
+
+        // Hide the initial result and the feedback buttons
+        existingPronunciationResult.style.display = 'none';
+        feedbackButtons.style.display = 'none';
+
+        // Create a new container for the alternatives
+        let alternativesContainer = document.getElementById('alternatives-container');
+        if (!alternativesContainer) {
+            alternativesContainer = document.createElement('div');
+            alternativesContainer.id = 'alternatives-container';
+            // Insert it after the main result content
+            document.getElementById('result-content').appendChild(alternativesContainer);
+        }
+        
+        alternativesContainer.innerHTML = '<h3>Other Voices</h3>'; // Clear previous alternatives and add a title
+
+        results.forEach(result => {
+            const voiceName = result.voice_name || 'Unknown Voice';
+            const audioSrc = result.audio_output;
+
+            if (audioSrc) {
+                const playerWrapper = document.createElement('div');
+                playerWrapper.className = 'alternative-player';
+                playerWrapper.innerHTML = `
+                    <p><strong>${voiceName}:</strong></p>
+                    <audio controls src="${audioSrc}"></audio>
+                `;
+                alternativesContainer.appendChild(playerWrapper);
+            }
+        });
+
+    } catch (error) {
+        console.error("Error getting all pronunciations:", error);
+        retryBtn.textContent = 'Error!';
+        // Restore button after a delay
+        setTimeout(() => {
+            retryBtn.disabled = false;
+            retryBtn.textContent = 'Get Another';
+        }, 2000);
+    }
+});
+
+document.getElementById('general-voices-btn').addEventListener('click', async () => {
+    const name = document.getElementById('name-input').value;
+    if (!name) return;
+
+    const generalBtn = document.getElementById('general-voices-btn');
+    generalBtn.disabled = true; // Prevent multiple clicks
+    generalBtn.textContent = 'Generating...';
+
+    const feedbackButtons = document.getElementById('feedback-buttons');
+    // DON'T hide the original pronunciation result - keep it visible for comparison
+    // const existingPronunciationResult = document.getElementById('pronunciation-result');
+    
+    try {
+        const response = await fetch('/pronounce/general', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, voice_id: null }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get general pronunciations.');
+
+        const data = await response.json();
+        const results = data.pronunciation_result;
+
+        // Keep the original result visible and just hide the feedback buttons
+        feedbackButtons.style.display = 'none';
+
+        // Create a new container for the general alternatives
+        let generalContainer = document.getElementById('general-container');
+        if (!generalContainer) {
+            generalContainer = document.createElement('div');
+            generalContainer.id = 'general-container';
+            // Insert it after the main result content
+            document.getElementById('result-content').appendChild(generalContainer);
+        }
+        
+        generalContainer.innerHTML = '<h3>General Voices</h3>'; // Clear previous alternatives and add a title
+
+        results.forEach(result => {
+            const voiceName = result.voice_name || 'Unknown Voice';
+            const audioSrc = result.audio_output;
+
+            if (audioSrc) {
+                const playerWrapper = document.createElement('div');
+                playerWrapper.className = 'general-player';
+                playerWrapper.innerHTML = `
+                    <p><strong>${voiceName}:</strong></p>
+                    <audio controls src="${audioSrc}"></audio>
+                `;
+                generalContainer.appendChild(playerWrapper);
+            }
+        });
+
+    } catch (error) {
+        console.error("Error getting general pronunciations:", error);
+        generalBtn.textContent = 'Error!';
+        // Restore button after a delay
+        setTimeout(() => {
+            generalBtn.disabled = false;
+            generalBtn.textContent = 'Try General Voices';
+        }, 2000);
+    }
 });
 
 document.getElementById('submit-own-btn').addEventListener('click', () => {

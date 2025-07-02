@@ -45,6 +45,7 @@ class PronunciationResult(BaseModel):
     details: str
     voice_id_used: str | None = None
     selection_method: str | None = None
+    voice_name: str | None = None
 
 class NameInput(BaseModel):
     name: str
@@ -53,7 +54,7 @@ class NameInput(BaseModel):
 class PronunciationOutput(BaseModel):
     ethnicity_result: EthnicityResult
     transliteration_result: TransliterationResult
-    pronunciation_result: PronunciationResult
+    pronunciation_result: PronunciationResult | list[PronunciationResult]
 
 @app.get("/", response_class=FileResponse)
 def read_index():
@@ -63,7 +64,91 @@ def read_index():
 @app.get("/voices")
 async def get_voices():
     """Returns a list of available TTS voices."""
-    return pronunciation_agent.AVAILABLE_VOICES
+    # Combine both specialized and general voices for the dropdown
+    all_voices = []
+    
+    # Add specialized voices with a category label
+    for voice in pronunciation_agent.AVAILABLE_VOICES:
+        voice_with_category = voice.copy()
+        voice_with_category['category'] = 'Specialized'
+        all_voices.append(voice_with_category)
+    
+    # Add general voices with a category label
+    for voice in pronunciation_agent.GENERAL_VOICES:
+        voice_with_category = voice.copy()
+        voice_with_category['category'] = 'General'
+        all_voices.append(voice_with_category)
+    
+    return all_voices
+
+@app.post("/pronounce/all", response_model=PronunciationOutput)
+async def get_all_pronunciations(data: NameInput):
+    """
+    Generates pronunciations from all available voices for a given name.
+    """
+    # Step 1: Detect ethnicity
+    ethnicity_result = ethnicity_agent.run(data.name)
+    detected_ethnicity = ethnicity_result.get("ethnicity", "Uncertain")
+
+    # Step 2: Transliterate name to native script
+    transliteration_result = transliteration_agent.run(data.name, detected_ethnicity)
+    
+    # Determine which name to use for pronunciation
+    if transliteration_result.get("transliteration_successful"):
+        name_to_pronounce = transliteration_result.get("native_script", data.name)
+    else:
+        name_to_pronounce = data.name # Fallback to original name
+
+    # Step 3: Generate pronunciation from all available voices
+    pronunciation_results = pronunciation_agent.run(
+        name_to_pronounce,
+        detected_ethnicity,
+        generate_for_all_available=True
+    )
+
+    # Combine results
+    result = {
+        "ethnicity_result": ethnicity_result,
+        "transliteration_result": transliteration_result,
+        "pronunciation_result": pronunciation_results
+    }
+    
+    return PronunciationOutput(**result)
+
+@app.post("/pronounce/general", response_model=PronunciationOutput)
+async def get_general_pronunciations(data: NameInput):
+    """
+    Generates pronunciations from all general voices for a given name.
+    """
+    # Step 1: Detect ethnicity
+    ethnicity_result = ethnicity_agent.run(data.name)
+    detected_ethnicity = ethnicity_result.get("ethnicity", "Uncertain")
+
+    # Step 2: Transliterate name to native script
+    transliteration_result = transliteration_agent.run(data.name, detected_ethnicity)
+    
+    # Determine which name to use for pronunciation
+    if transliteration_result.get("transliteration_successful"):
+        name_to_pronounce = transliteration_result.get("native_script", data.name)
+    else:
+        name_to_pronounce = data.name # Fallback to original name
+
+    # Step 3: Generate pronunciation from all general voices
+    pronunciation_results = pronunciation_agent.run(
+        name_to_pronounce,
+        detected_ethnicity,
+        generate_for_all_available=True,
+        use_general_voices=True
+    )
+
+    # Combine results
+    result = {
+        "ethnicity_result": ethnicity_result,
+        "transliteration_result": transliteration_result,
+        "pronunciation_result": pronunciation_results
+    }
+    
+    return PronunciationOutput(**result)
 
 @app.post("/pronounce", response_model=PronunciationOutput)
 async def get_pronunciation(data: NameInput):
