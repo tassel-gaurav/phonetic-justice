@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phonetic Justice - Admin Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Phonetic Justice - Admin Panel</h1>
+            <p>Manage and test name pronunciations</p>
+            <div class="nav-buttons">
+                <a href="/" class="nav-btn">← Back to Main</a>
+                <button id="add-name-btn" class="nav-btn">+ Add Name</button>
+                <button id="bulk-import-btn" class="nav-btn">📋 Bulk Import Names</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table id="names-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Detected Ethnicity</th>
+                        <th>Native Script</th>
+                        <th>Status</th>
+                        <th>Last Tested</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="names-tbody">
+                    <!-- Names will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div id="pronunciation-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-name">Testing: [Name]</h3>
+                    <button id="close-modal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="modal-loader" class="loader hidden"></div>
+                    <div id="modal-results"></div>
+                    <div id="modal-audio-section" class="hidden">
+                        <h4>Current Pronunciation:</h4>
+                        <div id="modal-audio-player"></div>
+                        <div class="modal-actions">
+                            <button id="try-specialized-btn">Try Specialized Voices</button>
+                            <button id="try-general-btn">Try General Voices</button>
+                            <button id="mark-correct-btn" class="success-btn">Mark as Correct</button>
+                        </div>
+                    </div>
+                    <div id="modal-alternatives" class="hidden">
+                        <h4>Alternative Pronunciations:</h4>
+                        <div id="alternatives-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Import Modal -->
+        <div id="bulk-import-modal" class="modal hidden">
+            <div class="modal-content large-modal">
+                <div class="modal-header">
+                    <h3>Bulk Import Names</h3>
+                    <button id="close-bulk-modal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="names-textarea">Paste names (one per line):</label>
+                        <textarea id="names-textarea" placeholder="John Smith&#10;Maria Garcia&#10;张伟&#10;محمد الأحمد&#10;Priya Sharma" rows="10"></textarea>
+                        <div class="textarea-help">
+                            <small>Paste your list of names, one per line. The system will automatically detect ethnicity and generate pronunciations.</small>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="auto-generate-pronunciations" checked>
+                            Automatically generate pronunciations for all names
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancel-bulk-btn">Cancel</button>
+                        <button type="button" id="process-names-btn" class="success-btn">Process Names</button>
+                    </div>
+                    
+                    <!-- Processing Progress -->
+                    <div id="processing-section" class="hidden">
+                        <h4>Processing Names...</h4>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div id="progress-fill" class="progress-fill"></div>
+                            </div>
+                            <div id="progress-text">0 / 0 names processed</div>
+                        </div>
+                        <div id="processing-log"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Name Modal -->
+        <div id="add-name-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add New Name</h3>
+                    <button id="close-add-modal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-name-form">
+                        <div class="form-group">
+                            <label for="new-name-input">Name:</label>
+                            <input type="text" id="new-name-input" placeholder="Enter name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="expected-ethnicity">Expected Ethnicity (optional):</label>
+                            <input type="text" id="expected-ethnicity" placeholder="e.g., Chinese, Arabic, etc.">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" id="cancel-add-btn">Cancel</button>
+                            <button type="submit" class="success-btn">Add & Test</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/admin.js"></script>
+</body>
+</html> 
